@@ -1,0 +1,236 @@
+#!/bin/bash
+
+export VERSION="0.0.1"
+
+# Wrapper for pebble/* scripts
+
+# Check for updates from GitHub Releases
+if [ ! -d "$HOME/.pbl" ]; then
+	mkdir $HOME/.pbl
+fi
+
+if [ ! -f "$HOME/.pbl/version" ]; then
+	echo "$VERSION" > $HOME/.pbl/version
+fi
+
+curl -s https://api.github.com/repos/blockarchitech/pbl/releases/latest | grep "tag_name" | cut -d '"' -f 4 > $HOME/.pbl/latest_version
+
+if [ "$(cat $HOME/.pbl/version)" != "$(cat $HOME/.pbl/latest_version)" ]; then
+	echo "==============================="
+	echo "A new version of pbl is available! Run pbl update to update."
+	echo "Current version: $(cat $HOME/.pbl/version)"
+	echo "Latest version: $(cat $HOME/.pbl/latest_version)"
+	echo "==============================="
+	echo ""
+fi
+
+# Check arguments
+if [ "$#" -ne 1 ]; then
+	echo "Illegal number of parameters"
+	echo "Run pbl help for usage"
+	exit 1
+fi
+
+# Check if the command is valid
+if [ "$1" != "new" ] && [ "$1" != "delete" ] && [ "$1" != "cmd" ] && [ "$1" != "build" ] && [ "$1" != "install" ] && [ "$1" != "logs" ] && [ "$1" != "attach" ] && [ "$1" != "help" ]; then
+	echo "Invalid command"
+	echo "Run pbl help for usage"
+	exit 1
+fi
+
+# Check if the command is help
+# TODO: Implement a actual help command
+if [ "$1" == "help" ]; then
+	echo "Usage: pbl <command> [arguments]"
+	echo ""
+	echo "Commands:"
+	echo "new - Create a new Pebble project"
+	echo "	Arguments: <project_name> <pebblejs_enabled>"
+	echo "delete - Delete a Pebble project"
+	echo "	Arguments: <project_name>"
+	echo "cmd - Run a command in the Pebble SDK Docker container (MUST be enclosed in quotes, also, it is a full bash command)"
+	echo "	Arguments: <project_name> <command>"
+	echo "build - Build the project"
+	echo "	Arguments: <project_name>"
+	echo "install - Install the project"
+	echo "	Arguments: <project_name> <phone_ip>"
+	echo "logs - View the logs of the project"
+	echo "	Arguments: <project_name> <phone_ip>"
+	echo "attach - Attach to the project's container for an interactive shell"
+	echo "	Arguments: <project_name>"
+	exit 0
+fi
+
+# == THE UPDATE COMMAND ==
+# This is a wreck
+# I wrote this code at 12am
+# Don't judge me
+if [ "$1" == "update" ]; then
+	echo "Updating pbl..."
+	curl -s https://api.github.com/repos/blockarchitech/pbl/releases/latest | grep "tag_name" | cut -d '"' -f 4 > $HOME/.pbl/latest_version
+	if [ "$(cat $HOME/.pbl/version)" == "$(cat $HOME/.pbl/latest_version)" ]; then
+		echo "==============================="
+		echo "You're already on the latest version ( $(cat $HOME/.pbl/version) )!"
+		echo "==============================="
+		exit 0
+	fi
+	mkdir -p $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs
+	mkdir -p $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/full
+	curl -s https://api.github.com/repos/blockarchitech/pbl/compare/$(cat $HOME/.pbl/version)...$(cat $HOME/.pbl/latest_version) | grep "filename" | cut -d '"' -f 4 > $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_changed
+	while read -r line; do
+		curl -s https://raw.githubusercontent.com/blockarchitech/pbl/$(cat $HOME/.pbl/latest_version)/$line > $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/$line
+	done < $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_changed
+	while read -r line; do
+		if [ "$(diff $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/$line $line)" ]; then
+			echo "$line" >> $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_changed
+		else
+			echo "$line" >> $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_unchanged
+		fi
+	done < $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_changed
+	while read -r line; do
+		curl -s https://raw.githubusercontent.com/blockarchitech/pbl/$(cat $HOME/.pbl/latest_version)/$line > $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/full/$line
+	done < $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_changed
+	while read -r line; do
+		cp $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/full/$line $line
+	done < $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_changed
+	while read -r line; do
+		cp $line $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/full/$line
+	done < $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)/diffs/files_unchanged
+	rm -rf $HOME/.pbl/tmp/update_$(cat $HOME/.pbl/latest_version)
+	echo "======= Update Complete ======="
+	echo "Successfully updated to version $(cat $HOME/.pbl/latest_version)!"
+	echo "==============================="
+	exit 0
+fi
+
+export PROJECT_ROOT=$HOME/.pbl/projects
+
+# Check if the project exists (all commands except new, help)
+if [ "$1" != "new" ]; then
+	if [ "$#" -ne 2 ]; then
+		echo "Illegal number of parameters"
+		echo "Run pbl help for usage"
+		exit 1
+	fi
+
+	if [ ! -d "$PROJECT_ROOT/$2" ]; then
+		echo "Project does not exist"
+		echo "Run pbl help for usage"
+		exit 1
+	fi
+	# Check if the container exists
+	if [ ! "$(docker ps -a | grep $2)" ]; then
+		echo "Project container doesn't exist! This is usually because you cancelled project folder deletion after container deletion. Move everything inside $2 to a new folder and run pbl new <new_folder_name> to fix this."
+		exit 1
+	fi
+fi
+
+# Command Handling
+# case statement used instead of if/elif/else because it's easier to read, + it's just a bunch of scripts we're calling
+case "$1" in
+	new)
+		# Check arguments
+		if [ "$#" -ne 3 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Check if the project already exists
+		if [ -d "$PROJECT_ROOT/$2" ]; then
+			echo "Project already exists"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Check if the project name is valid
+		if [[ "$2" =~ [^a-zA-Z0-9] ]]; then
+			echo "Project name is invalid"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Check if the pebblejs_enabled argument is valid
+		if [ "$3" != "true" ] && [ "$3" != "false" ]; then
+			echo "Invalid pebblejs_enabled argument"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Create the project
+		$HOME/.pbl/pebble/new $2 $3
+		;;
+	delete)
+		# Check arguments
+		if [ "$#" -ne 2 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Delete the project
+		$HOME/.pbl/pebble/delete $2
+		;;
+	cmd)
+		# Check arguments
+		if [ "$#" -ne 3 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Run the command
+		$HOME/.pbl/pebble/cmd $2 "$3"
+		;;
+	build)
+		# Check arguments
+		if [ "$#" -ne 2 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Build the project
+		$HOME/.pbl/pebble/build $2
+		;;
+	install)
+		# Check arguments
+		if [ "$#" -ne 3 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Install the project
+		$HOME/.pbl/pebble/install $2 $3
+		;;
+	logs)
+		# Check arguments
+		if [ "$#" -ne 3 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# View the logs
+		$HOME/.pbl/pebble/logs $2 $3
+		;;
+	attach)
+		# Check arguments
+		if [ "$#" -ne 2 ]; then
+			echo "Illegal number of parameters"
+			echo "Run pbl help for usage"
+			exit 1
+		fi
+
+		# Attach to the container
+		$HOME/.pbl/pebble/attach $2
+		;;
+esac
+
+
+
+# If we get here, something went wrong
+echo "Invalid command"
+echo "Run pbl help for usage"
+exit 1

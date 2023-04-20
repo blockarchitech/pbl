@@ -1,0 +1,21 @@
+#!/bin/bash
+export PEBBLE_PROJECT_NAME=$1
+if [ "$#" -ne 1 ]; then
+	echo "Illegal number of parameters"
+	echo "Usage: pbl build <project_name>"
+	exit 1
+fi
+
+exec 1>/dev/null
+
+if [ ! "$(docker ps -a | grep $PEBBLE_PROJECT_NAME)" ]; then
+	exec 1>&1
+	echo "Container does not exist! Run pbl new first."
+	exit 1
+fi
+
+docker start $PEBBLE_PROJECT_NAME
+docker exec -it $PEBBLE_PROJECT_NAME bash -c "cd /root/$PEBBLE_PROJECT_NAME && pebble build"
+docker stop $PEBBLE_PROJECT_NAME
+
+

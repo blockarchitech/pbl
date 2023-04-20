@@ -1,0 +1,58 @@
+#!/bin/bash
+
+# Create a new Pebble project using Docker
+export PEBBLE_PROJECTS_ROOT=$HOME/.pbl/projects
+export PEBBLE_PROJECT_NAME=$1
+export PEBBLEJS_ENABLED=$2
+
+# Check Arguments
+if [ "$#" -ne 2 ]; then
+	echo "Illegal number of parameters"
+	echo "Usage: new_pebble_project.sh <project_name> <pebblejs_enabled>"
+	exit 1
+fi
+if [ -d "$PEBBLE_PROJECTS_ROOT/$PEBBLE_PROJECT_NAME" ]; then
+	echo "Project directory already exists! This likely means the project already exists. Run pebble/delete_pebble_project to delete the container and project directory."
+	exit 1
+elif [ -z "$PEBBLE_PROJECT_NAME" ]; then
+	echo "Project name cannot be empty! Please enter a project name."
+	exit 1
+elif [ "$(docker ps -a | grep $PEBBLE_PROJECT_NAME)" ]; then
+	echo "Container already exists! Run pebble/delete_pebble_project to delete the container and project directory"
+	exit 1
+fi
+echo "Creating Pebble project $PEBBLE_PROJECT_NAME in $PEBBLE_PROJECTS_ROOT/$PEBBLE_PROJECT_NAME"
+exec > >(tee -i pebble_project_creation_$(date +"%Y-%m-%d_%H-%M-%S").log)
+exec 2>&1
+mkdir -p $PEBBLE_PROJECTS_ROOT/$PEBBLE_PROJECT_NAME
+
+# Create the Docker container
+docker create --name=$PEBBLE_PROJECT_NAME \
+	 -it \
+	 --network=host \
+	 -e DISPLAY=${HOSTNAME}:0 -v /tmp/.X11-unix:/tmp/.X11-unix \
+	 -v ~/.Xauthority:/root/.Xauthority \
+	 --mount type=bind,source=$PEBBLE_PROJECTS_ROOT/$PEBBLE_PROJECT_NAME,target=/root/$PEBBLE_PROJECT_NAME \
+	rebble/pebble-sdk
+docker start $PEBBLE_PROJECT_NAME
+
+if [ "$PEBBLEJS_ENABLED" = "true" ]; then
+	docker exec -it $PEBBLE_PROJECT_NAME bash -c "cd /root && pebble new-project --javascript $PEBBLE_PROJECT_NAME"
+	docker exec -it $PEBBLE_PROJECT_NAME bash -c "cd /root/$PEBBLE_PROJECT_NAME && pebble package install pebblejs"
+else
+	docker exec -it $PEBBLE_PROJECT_NAME bash -c "cd /root/ && pebble new-project $PEBBLE_PROJECT_NAME"
+fi
+
+docker stop $PEBBLE_PROJECT_NAME
+
+echo -e "Finished creating Pebble project $PEBBLE_PROJECT_NAME in $PEBBLE_PROJECTS_ROOT/$PEBBLE_PROJECT_NAME"
+echo -e "To open the project directory, run: open $PEBBLE_PROJECTS_ROOT/$PEBBLE_PROJECT_NAME"
+echo ""
+echo "Learn more about the SDK -> https://developer.rebble.io/developer.pebble.com/sdk/index.html"
+echo "Learn more about Pebble development -> https://developer.rebble.io/developer.pebble.com/guides/index.html"
+echo "Get help from Rebble's community -> https://rebble.io/discord"
+echo "Happy Developing!"
+
+unset PEBBLE_PROJECTS_ROOT
+unset PEBBLE_PROJECT_NAME
+unset PEBBLEJS_ENABLED

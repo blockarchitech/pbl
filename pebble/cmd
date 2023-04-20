@@ -1,0 +1,13 @@
+#!/bin/bash
+export PEBBLE_PROJECT_NAME=$1
+export PEBBLE_COMMAND=$2
+if [ "$#" -ne 2 ]; then
+	echo "Illegal number of parameters"
+	echo "Usage: run_sdk_command.sh <project_name> <command>"
+	exit 1
+fi
+docker start $PEBBLE_PROJECT_NAME
+docker exec -it $PEBBLE_PROJECT_NAME bash -c "cd /root/$PEBBLE_PROJECT_NAME && $PEBBLE_COMMAND"
+docker stop $PEBBLE_PROJECT_NAME
+unset PEBBLE_PROJECT_NAME
+unset PEBBLE_COMMAND

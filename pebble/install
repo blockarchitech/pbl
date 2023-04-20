@@ -1,0 +1,18 @@
+#!/bin/bash
+export PEBBLE_PROJECT_NAME=$1
+export PEBBLE_PHONE_IP=$2
+if [ "$#" -ne 2 ]; then
+	echo "Illegal number of parameters"
+	echo "Usage: pbl install <project_name> <phone_ip>"
+	exit 1
+fi
+exec 1>/dev/null
+if [ ! "$(docker ps -a | grep $PEBBLE_PROJECT_NAME)" ]; then
+	exec 1>&1
+	echo "Container does not exist! Run pbl new first."
+	exit 1
+fi
+
+docker start $PEBBLE_PROJECT_NAME
+docker exec -it $PEBBLE_PROJECT_NAME bash -c "cd /root/$PEBBLE_PROJECT_NAME && pebble install --phone $PEBBLE_PHONE_IP"
+docker stop $PEBBLE_PROJECT_NAME
