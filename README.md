@@ -18,9 +18,3 @@ Pebble SDK docker bash wrapper thing for macOS and _maybe_ Linux (untested!)
 ## Usage
 
 See `$ pbl help` for more details.
-
-### Create a new project
-
-```bash
-$ pbl new my-project [--javascript]
-```
